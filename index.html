@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photogotchi 📸</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --sl: 39%; --st: 42%; --sw: 28%; --sh: 27.5%;
+    }
+
+    body {
+      height: 100vh; overflow: hidden;
+      background: linear-gradient(135deg, #fce4f3 0%, #dde8ff 50%, #e4f8f0 100%);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 8px 16px 50px; gap: 4px;
+      font-family: 'Nunito', sans-serif;
+    }
+
+    /* arrows live inside .tama-outer, absolutely positioned over the PNG transparent margins */
+    .tama-outer {
+      flex: 0 0 auto; position: relative; display: inline-block; z-index: 10;
+    }
+
+    .arrow-btn {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      font-size: 30px; background: none; border: none;
+      cursor: pointer; color: rgba(255,255,255,0.55); padding: 10px;
+      user-select: none; line-height: 1; z-index: 10; transition: color .15s;
+    }
+    /* include translateY so scale doesn't reset the vertical centering */
+    .arrow-btn:hover  { color: rgba(255,255,255,0.9); transform: translateY(-50%) scale(1.25); }
+    .arrow-btn:active { transform: translateY(-50%) scale(.9); }
+    .arrow-btn:disabled { opacity: .15; cursor: not-allowed; transform: translateY(-50%); }
+    /* tamagotchi body starts at ~32.7% from left / ~31.3% from right of the image */
+    #prevBtn { left: 26%; }
+    #nextBtn { right: 24%; }
+
+    .device-wrap { position: relative; display: inline-block; overflow: hidden; }
+
+    #cameraFeed {
+      position: absolute;
+      left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
+      object-fit: cover; border-radius: 4px; transform: scaleX(-1); z-index: 1;
+    }
+
+    #tamaFrame {
+      position: relative; display: block;
+      height: min(calc(100vh - 190px), 700px);
+      max-width: calc(100vw - 32px);
+      width: auto; z-index: 2; pointer-events: none; user-select: none;
+    }
+
+    /* ── Flash ─── */
+    .flash { position: fixed; inset: 0; background: white; opacity: 0; pointer-events: none; z-index: 100; }
+    .flash.snap { animation: doFlash .45s ease-out forwards; }
+    @keyframes doFlash { 0% { opacity: .9; } 100% { opacity: 0; } }
+
+    /* ── Countdown overlay ─── */
+    .countdown-wrap {
+      position: absolute;
+      left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 3; pointer-events: none;
+    }
+    #countdownNum {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(24px, 5vw, 48px); color: #fff;
+      text-shadow: 0 0 12px rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.4);
+      opacity: 0; transform: scale(.5); transition: opacity .15s, transform .15s;
+    }
+    #countdownNum.show { opacity: 1; transform: scale(1); }
+
+    /* ── Status ─── */
+    #statusBar { font-size: 13px; color: #8a5aa0; min-height: 18px; flex: 0 0 auto; position: relative; z-index: 10; }
+
+    /* ── Snap GIF button ─── */
+    .controls { flex: 0 0 auto; position: relative; z-index: 10; }
+    .snap-gif {
+      height: 100px; width: auto;
+      cursor: pointer;
+      mix-blend-mode: multiply;
+      transition: transform .1s, opacity .1s;
+      display: block;
+    }
+    .snap-gif:hover  { transform: scale(1.08); }
+    .snap-gif:active { transform: scale(.93); }
+    .snap-gif.disabled { opacity: .35; pointer-events: none; }
+
+    /* ── Camera error ─── */
+    #cameraError {
+      display: none; position: absolute;
+      left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
+      align-items: center; justify-content: center; flex-direction: column;
+      gap: 6px; z-index: 2; background: rgba(50,20,70,.6); border-radius: 4px;
+    }
+    #cameraError.show { display: flex; }
+    .cam-error-icon { font-size: 28px; }
+    .cam-error-text {
+      font-size: 9px; font-family: 'Press Start 2P', monospace;
+      color: #ffd6ff; text-align: center; line-height: 1.6; padding: 0 6px;
+    }
+
+    /* ── Gallery ─── */
+    .gallery-section {
+      flex: 1 1 0; min-height: 0;
+      width: 100%; max-width: 900px;
+      overflow-y: auto; display: flex; flex-direction: column; align-items: center;
+    }
+    .gallery-title {
+      font-family: 'Press Start 2P', monospace; font-size: 10px;
+      color: #6b3fa0; margin: 6px 0 8px; flex: 0 0 auto;
+    }
+    .gallery {
+      display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+      width: 100%;
+    }
+    .photo-card {
+      position: relative; border-radius: 10px; overflow: hidden;
+      box-shadow: 0 3px 12px rgba(100,50,150,.2); transition: transform .2s;
+    }
+    .photo-card:hover { transform: scale(1.04) rotate(-1deg); }
+    .photo-card img { display: block; height: 120px; width: auto; }
+    .photo-card .dl-btn {
+      position: absolute; bottom: 6px; right: 6px;
+      background: rgba(255,255,255,.92); border: 2px solid #d9a0db;
+      border-radius: 7px; padding: 3px 7px; font-size: 13px;
+      cursor: pointer; line-height: 1; transition: background .15s;
+    }
+    .photo-card .dl-btn:hover { background: #fff; }
+  </style>
+</head>
+<body>
+
+  <div class="tama-outer">
+    <div class="device-wrap" id="deviceWrap">
+      <video id="cameraFeed" autoplay muted playsinline></video>
+      <div class="countdown-wrap"><span id="countdownNum"></span></div>
+      <div id="cameraError">
+        <span class="cam-error-icon">📵</span>
+        <p class="cam-error-text">camera<br>access<br>needed</p>
+      </div>
+      <img id="tamaFrame" src="assets/blue_tama.png" alt="Photogotchi">
+    </div>
+    <button class="arrow-btn" id="prevBtn">&#9664;</button>
+    <button class="arrow-btn" id="nextBtn">&#9654;</button>
+  </div>
+
+  <div id="statusBar"></div>
+
+  <div class="controls">
+    <img src="snap.gif" id="snapBtn" class="snap-gif" alt="Snap">
+  </div>
+
+  <div class="gallery-section" id="gallerySection" style="display:none">
+    <p class="gallery-title">✦ your photos ✦</p>
+    <div class="gallery" id="gallery"></div>
+  </div>
+
+  <div class="flash" id="flash"></div>
+
+  <script>
+    const video         = document.getElementById('cameraFeed');
+    const tamaFrame     = document.getElementById('tamaFrame');
+    const snapBtn       = document.getElementById('snapBtn');
+    const prevBtn       = document.getElementById('prevBtn');
+    const nextBtn       = document.getElementById('nextBtn');
+    const gallery       = document.getElementById('gallery');
+    const gallerySection= document.getElementById('gallerySection');
+    const flash         = document.getElementById('flash');
+    const countNum      = document.getElementById('countdownNum');
+    const statusBar     = document.getElementById('statusBar');
+    const camError      = document.getElementById('cameraError');
+
+    const SKINS = ['assets/blue_tama.png', 'assets/yellow_tama.png'];
+    let skinIdx = 0;
+
+    function setStatus(msg) { statusBar.textContent = msg; }
+
+    function setDisabled(v) {
+      snapBtn.classList.toggle('disabled', v);
+      prevBtn.disabled = nextBtn.disabled = v;
+    }
+
+    function updateSkin() {
+      tamaFrame.src = SKINS[skinIdx];
+    }
+
+    prevBtn.addEventListener('click', () => { skinIdx = (skinIdx - 1 + SKINS.length) % SKINS.length; updateSkin(); });
+    nextBtn.addEventListener('click', () => { skinIdx = (skinIdx + 1) % SKINS.length; updateSkin(); });
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        setStatus('camera ready!');
+        setTimeout(() => setStatus(''), 2000);
+      } catch {
+        camError.classList.add('show');
+        setStatus('camera permission denied');
+        snapBtn.classList.add('disabled');
+      }
+    }
+
+    function countdown(from) {
+      return new Promise(resolve => {
+        let n = from;
+        const tick = () => {
+          countNum.textContent = n;
+          countNum.classList.add('show');
+          setTimeout(() => {
+            countNum.classList.remove('show');
+            setTimeout(() => { if (--n > 0) tick(); else resolve(); }, 200);
+          }, 700);
+        };
+        tick();
+      });
+    }
+
+    async function captureFrame() {
+      const wrap = document.getElementById('deviceWrap');
+      const W = wrap.offsetWidth * 2, H = wrap.offsetHeight * 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+
+      const grad = ctx.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, '#fce4f3'); grad.addColorStop(.5, '#dde8ff'); grad.addColorStop(1, '#e4f8f0');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+      const vx = .39 * W, vy = .42 * H, vw = .28 * W, vh = .275 * H;
+      ctx.save(); ctx.translate(vx + vw, vy); ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, vw, vh); ctx.restore();
+
+      ctx.drawImage(tamaFrame, 0, 0, W, H);
+      return canvas.toDataURL('image/jpeg', 0.93);
+    }
+
+    function doFlash() {
+      flash.classList.remove('snap'); void flash.offsetWidth; flash.classList.add('snap');
+    }
+
+    function addToGallery(dataUrl) {
+      gallerySection.style.display = '';
+      const card = document.createElement('div');
+      card.className = 'photo-card';
+
+      const img = document.createElement('img');
+      img.src = dataUrl; card.appendChild(img);
+
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'dl-btn'; dlBtn.title = 'Download'; dlBtn.textContent = '⬇';
+      dlBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        Object.assign(document.createElement('a'), {
+          href: dataUrl, download: `photogotchi-${Date.now()}.jpg`
+        }).click();
+      });
+      card.appendChild(dlBtn);
+      gallery.prepend(card);
+    }
+
+    snapBtn.addEventListener('click', async () => {
+      if (!video.srcObject || snapBtn.classList.contains('disabled')) return;
+      setDisabled(true); setStatus('get ready...');
+      await countdown(3); doFlash();
+      addToGallery(await captureFrame());
+      setStatus('photo saved!'); setTimeout(() => setStatus(''), 2500);
+      setDisabled(false);
+    });
+
+    updateSkin();
+    startCamera();
+  </script>
+
+  <script>
+    /* ── Floating background tamagotchis ── */
+    (function () {
+      const SRCS = Array.from({ length: 10 }, (_, i) => `tamagotchis/tama${i + 1}.png`);
+
+      class Sprite {
+        constructor(src) {
+          this.size = 48 + Math.floor(Math.random() * 28);
+          this.x    = Math.random() * (window.innerWidth  - this.size);
+          this.y    = Math.random() * (window.innerHeight - this.size);
+          this.vx   = (Math.random() - 0.5) * 2;
+          this.vy   = (Math.random() - 0.5) * 2;
+          this.rot  = Math.random() * 360;
+          this.rotV = (Math.random() - 0.5) * 1.5;
+          this.dragging = false;
+          this.dragOX = 0; this.dragOY = 0;
+          this.prevX = 0;  this.prevY = 0; this.prevT = 0;
+
+          this.el = document.createElement('img');
+          this.el.src = src;
+          this.el.draggable = false;
+          Object.assign(this.el.style, {
+            position: 'fixed', left: '0', top: '0',
+            width: this.size + 'px', height: 'auto',
+            zIndex: '5', cursor: 'grab',
+            userSelect: 'none', pointerEvents: 'auto',
+            willChange: 'transform', transition: 'filter .15s',
+          });
+          document.body.appendChild(this.el);
+
+          this.el.addEventListener('mousedown', e => this._down(e.clientX, e.clientY, e));
+          this.el.addEventListener('touchstart', e => {
+            const t = e.touches[0]; this._down(t.clientX, t.clientY, e);
+          }, { passive: false });
+        }
+
+        _down(cx, cy, e) {
+          e.preventDefault(); e.stopPropagation();
+          this.dragging = true;
+          this.dragOX = cx - this.x; this.dragOY = cy - this.y;
+          this.vx = 0; this.vy = 0; this.rotV = 0;
+          this.prevX = cx; this.prevY = cy; this.prevT = performance.now();
+          this.el.style.cursor = 'grabbing';
+          this.el.style.zIndex = '15';
+          this.el.style.filter = 'drop-shadow(0 4px 14px rgba(0,0,0,.35))';
+        }
+
+        move(cx, cy) {
+          if (!this.dragging) return;
+          const t = performance.now(), dt = t - this.prevT;
+          if (dt > 0 && dt < 60) {
+            this.vx = (cx - this.prevX) / dt * 16;
+            this.vy = (cy - this.prevY) / dt * 16;
+          }
+          this.prevX = cx; this.prevY = cy; this.prevT = t;
+          this.x = cx - this.dragOX;
+          this.y = cy - this.dragOY;
+          this._render();
+        }
+
+        release() {
+          if (!this.dragging) return;
+          this.dragging = false;
+          const spd = Math.hypot(this.vx, this.vy);
+          if (spd > 12) { this.vx *= 12 / spd; this.vy *= 12 / spd; }
+          this.rotV = this.vx * 0.4;
+          this.el.style.cursor = 'grab';
+          this.el.style.zIndex = '5';
+          this.el.style.filter = '';
+        }
+
+        tick() {
+          if (this.dragging) return;
+          if (Math.random() < 0.012) {
+            this.vx += (Math.random() - 0.5) * 0.7;
+            this.vy += (Math.random() - 0.5) * 0.7;
+          }
+          const spd = Math.hypot(this.vx, this.vy);
+          if (spd > 4)   { this.vx *= 4 / spd; this.vy *= 4 / spd; }
+          if (spd < 0.3) { const a = Math.random() * Math.PI * 2; this.vx += Math.cos(a) * .4; this.vy += Math.sin(a) * .4; }
+          this.vx *= 0.995; this.vy *= 0.995;
+          this.x += this.vx; this.y += this.vy;
+          this.rot += this.rotV; this.rotV *= 0.97;
+          const W = window.innerWidth, H = window.innerHeight;
+          if (this.x < 0)             { this.x = 0;             this.vx =  Math.abs(this.vx) * 0.75; }
+          if (this.x > W - this.size) { this.x = W - this.size; this.vx = -Math.abs(this.vx) * 0.75; }
+          if (this.y < 0)             { this.y = 0;             this.vy =  Math.abs(this.vy) * 0.75; }
+          if (this.y > H - this.size) { this.y = H - this.size; this.vy = -Math.abs(this.vy) * 0.75; }
+          this._render();
+        }
+
+        _render() {
+          this.el.style.transform = `translate(${this.x}px,${this.y}px) rotate(${this.rot}deg)`;
+        }
+      }
+
+      const sprites = SRCS.map(src => new Sprite(src));
+
+      window.addEventListener('mousemove', e => sprites.forEach(s => s.move(e.clientX, e.clientY)));
+      window.addEventListener('mouseup',   () => sprites.forEach(s => s.release()));
+      window.addEventListener('touchmove', e => {
+        const t = e.touches[0]; sprites.forEach(s => s.move(t.clientX, t.clientY));
+      }, { passive: false });
+      window.addEventListener('touchend',  () => sprites.forEach(s => s.release()));
+
+      (function loop() { sprites.forEach(s => s.tick()); requestAnimationFrame(loop); })();
+    })();
+  </script>
+</body>
+</html>
