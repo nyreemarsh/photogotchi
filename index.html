@@ -45,14 +45,11 @@
 
     .device-wrap { position: relative; display: inline-block; overflow: hidden; }
 
-    /* video stays sized (Safari freezes a 0px/off-screen feed) but is never shown */
     #cameraFeed {
       position: absolute;
       left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
       opacity: 0; pointer-events: none; z-index: 0;
     }
-
-    /* squished + pixelated live preview, drawn every frame in JS */
     #cameraCanvas {
       position: absolute;
       left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
@@ -60,7 +57,6 @@
       image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;
     }
 
-    /* width-driven; a locked height + max-width squashed the frame on narrow screens */
     #tamaFrame {
       position: relative; display: block; height: auto;
       width: min(calc((100vw - var(--gutter)) * var(--eggk)), calc((100dvh - var(--chrome)) * 1.4317), 1575px);
@@ -72,8 +68,6 @@
     .flash.snap { animation: doFlash .45s ease-out forwards; }
     @keyframes doFlash { 0% { opacity: .9; } 100% { opacity: 0; } }
 
-    /* ── Countdown overlay ─── */
-    /* window bounds, not the oversized video canvas — that left the digit off-centre */
     .countdown-wrap{position:absolute;left:41.42%;top:42.33%;width:19.38%;height:25.72%;display:flex;align-items:center;justify-content:center;z-index:3;pointer-events:none;}
     #countdownNum{font-family:'Press Start 2P',monospace;font-size:clamp(24px,5vw,48px);color:#fff;text-shadow:0 0 12px rgba(0,0,0,.6),0 2px 0 rgba(0,0,0,.4);opacity:0;transform:scale(.5);transition:opacity .15s,transform .15s;}
     #countdownNum.show { opacity: 1; transform: scale(1); }
@@ -81,7 +75,6 @@
     /* ── Status ─── */
     #statusBar { font-size: 13px; color: #8a5aa0; min-height: 18px; flex: 0 0 auto; position: relative; z-index: 10; margin-top: -7vh; }
 
-    /* 51.32% = measured centre of the frame PNG's top loop */
     .bw-dot{position:absolute;top:12%;left:51.32%;transform:translateX(-50%);width:clamp(26px,5.5%,56px);aspect-ratio:318/270;background:url('assets/colour.png') center/contain no-repeat;border:none;cursor:pointer;z-index:11;pointer-events:auto;transition:transform .15s;}
     .bw-dot:hover{transform:translateX(-50%) scale(1.25);} .bw-dot.bw{background-image:url('assets/bw.png');}
 
@@ -137,10 +130,9 @@
     #modalImg{width:100%;height:auto;border-radius:0;display:block;margin-bottom:-50px;}
     .modal-title{font-family:'Press Start 2P',monospace;font-size:9px;color:#6b3fa0;}
     .modal-save{background:none;border:none;padding:0;cursor:pointer;transition:transform .15s;}
-    .modal-save:hover{transform:scale(1.07);}
-    .modal-save img{height:var(--savh);width:auto;mix-blend-mode:multiply;display:block;}
+    .modal-save:hover{transform:scale(1.07);} .modal-save img{height:var(--savh);width:auto;mix-blend-mode:multiply;display:block;}
     .modal-dismiss,.modal-video{background:none;border:none;font-family:'Nunito',sans-serif;font-size:var(--dismissf);cursor:pointer;text-decoration:underline;}
-    .modal-dismiss{color:#bbb;} .modal-video{color:#8a5aa0;display:none;}
+    .modal-dismiss{color:#bbb;} .modal-video{color:#8a5aa0;display:none;} .modal-video.on{display:block;}
   </style>
 </head>
 <body>
@@ -176,7 +168,7 @@
   <div class="photo-modal" id="photoModal"><div class="modal-card" id="modalCard">
     <img id="modalImg" src="" alt="">
     <button class="modal-save" id="modalSave"><img src="save_photo.png" alt="Save photo"></button>
-    <button class="modal-video" id="modalVideo">save as video</button>
+    <button class="modal-video" id="modalVideo">save video</button>
     <button class="modal-dismiss" id="modalDismiss">take another</button>
   </div></div>
 
@@ -324,9 +316,10 @@
 
     // iOS ignores <a download> (file lands in Files, not Photos) — share sheet offers Save Image
     async function saveAsset(url, name, type) {
+      const isTouch = matchMedia('(pointer: coarse)').matches;
       try {
         const file = new File([await (await fetch(url)).blob()], name, { type });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file] }); return;
         }
       } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -362,15 +355,12 @@
         await new Promise(r => setTimeout(r, 50));
         const gifUrl = createAnimatedGIF(canvases, 75, 900);
         gifBtn.classList.remove('loading');
-        showModal({ displayUrl: gifUrl, downloadUrl: gifUrl, saveImg: 'save_gif.png', crop: canvases[0].crop });
+        showModal({ displayUrl: gifUrl, downloadUrl: gifUrl, saveImg: 'save_gif.png', crop: canvases[0].crop, frames: canvases });
         setStatus('');
-        createVideoFromCanvases(canvases, 750).then(v => {
-          modalVideo.style.display=''; modalVideo.onclick=()=>saveAsset(v.url,`photogotchi-${Date.now()}.${v.ext}`,v.type);
-        }).catch(()=>{});
       } catch (err) { gifBtn.classList.remove('loading'); setDisabled(false); setStatus('gif failed — try again'); }
     });
 
-    function showModal({displayUrl, downloadUrl, saveImg = 'save_photo.png', crop = null, video = null}) {
+    function showModal({displayUrl, downloadUrl, saveImg = 'save_photo.png', crop = null, frames = null}) {
       const isGif = saveImg.includes('gif'), card = document.getElementById('modalCard');
       const r = tamaFrame.getBoundingClientRect(), s = crop ? r.width/crop.W : 1;
       const left = crop ? r.left+crop.x0*s : r.left, top = crop ? r.top+crop.y0*(r.height/crop.H) : r.top;
@@ -378,8 +368,17 @@
       card.style.cssText = `position:fixed;left:${left}px;top:${top}px;width:${crop?crop.cw*s:r.width}px;padding:0;background:none;box-shadow:none;gap:8px;max-width:none;`;
       modalImg.src = displayUrl; modalSave.querySelector('img').src = saveImg; photoModal.classList.add('show');
       modalSave.onclick = () => saveAsset(downloadUrl, `photogotchi-${Date.now()}.${isGif?'gif':'png'}`, isGif?'image/gif':'image/png');
-      modalVideo.style.display = video ? '' : 'none';
-      modalVideo.onclick = () => video && saveAsset(video.url, `photogotchi-${Date.now()}.${video.ext}`, video.type);
+      modalVideo.classList.toggle('on', !!frames); modalVideo.textContent = 'save video';
+      let vid = null;
+      if (frames) createVideoFromCanvases(frames, 750).then(v => { vid = v; }).catch(() => {});
+      modalVideo.onclick = async () => {
+        if (!frames) return;
+        try {
+          if (!vid) { modalVideo.textContent = 'encoding…'; vid = await createVideoFromCanvases(frames, 750); }
+          modalVideo.textContent = 'save video';
+          await saveAsset(vid.url, `photogotchi-${Date.now()}.${vid.ext}`, vid.type);
+        } catch { modalVideo.textContent = 'save video'; setStatus('could not make a video'); }
+      };
       const close = () => { photoModal.classList.remove('show'); addToGallery(downloadUrl); setDisabled(false); };
       modalDismiss.onclick = close;
       photoModal.onclick = e => { if (e.target === photoModal) close(); };
