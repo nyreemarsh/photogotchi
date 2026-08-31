@@ -167,8 +167,7 @@ function lzwEncode(indices, minCode) {
   return out;
 }
 
-// Canvas capture → mp4/webm. Video can't be transparent, so frames sit on page pink.
-// Times out if MediaRecorder hangs (common on iOS) so GIF save is never blocked.
+// Canvas capture → mp4/webm. Video can't carry alpha, so frames sit on white.
 function createVideoFromCanvases(canvases, delayMs = 750) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -199,7 +198,7 @@ function createVideoFromCanvases(canvases, delayMs = 750) {
     (function paint(now) {
       if (settled) return;
       const i = Math.min(canvases.length - 1, (now - t0) / delayMs | 0);
-      ctx.fillStyle = '#fce4f3'; ctx.fillRect(0, 0, W, H); ctx.drawImage(canvases[i], 0, 0);
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.drawImage(canvases[i], 0, 0);
       if (now - t0 < total) requestAnimationFrame(paint);
       else try { rec.stop(); } catch (e) { done(e); }
     })(t0);
