@@ -86,7 +86,7 @@
     .snap-gif:hover  { transform: scale(1.08); }
     .snap-gif:active { transform: scale(.93); }
     .snap-gif.disabled { opacity: .35; pointer-events: none; }
-    .snap-gif.loading { animation: pulse .8s ease-in-out infinite; pointer-events: none; }
+    .snap-gif.loading,.modal-save.loading { animation: pulse .8s ease-in-out infinite; pointer-events: none; }
     @keyframes pulse { 0%,100% { opacity: .3; transform: scale(.97); } 50% { opacity: .85; transform: scale(1.03); } }
 
     @media (max-width: 640px) {
@@ -131,8 +131,8 @@
     .modal-title{font-family:'Press Start 2P',monospace;font-size:9px;color:#6b3fa0;}
     .modal-save{background:none;border:none;padding:0;cursor:pointer;transition:transform .15s;}
     .modal-save:hover{transform:scale(1.07);} .modal-save img{height:var(--savh);width:auto;mix-blend-mode:multiply;display:block;}
-    .modal-dismiss,.modal-video{background:none;border:none;font-family:'Nunito',sans-serif;font-size:var(--dismissf);cursor:pointer;text-decoration:underline;}
-    .modal-dismiss{color:#bbb;} .modal-video{color:#8a5aa0;display:none;} .modal-video.on{display:block;}
+    .modal-dismiss{background:none;border:none;font-family:'Nunito',sans-serif;font-size:var(--dismissf);cursor:pointer;text-decoration:underline;color:#bbb;}
+    .modal-video{display:none;} .modal-video.on{display:block;}
   </style>
 </head>
 <body>
@@ -168,7 +168,7 @@
   <div class="photo-modal" id="photoModal"><div class="modal-card" id="modalCard">
     <img id="modalImg" src="" alt="">
     <button class="modal-save" id="modalSave"><img src="save_photo.png" alt="Save photo"></button>
-    <button class="modal-video" id="modalVideo">save video</button>
+    <button class="modal-save modal-video" id="modalVideo"><img src="save_video.png" alt="Save video"></button>
     <button class="modal-dismiss" id="modalDismiss">take another</button>
   </div></div>
 
@@ -368,16 +368,16 @@
       card.style.cssText = `position:fixed;left:${left}px;top:${top}px;width:${crop?crop.cw*s:r.width}px;padding:0;background:none;box-shadow:none;gap:8px;max-width:none;`;
       modalImg.src = displayUrl; modalSave.querySelector('img').src = saveImg; photoModal.classList.add('show');
       modalSave.onclick = () => saveAsset(downloadUrl, `photogotchi-${Date.now()}.${isGif?'gif':'png'}`, isGif?'image/gif':'image/png');
-      modalVideo.classList.toggle('on', !!frames); modalVideo.textContent = 'save video';
+      modalVideo.classList.toggle('on', !!frames); modalVideo.classList.remove('loading');
       let vid = null;
       if (frames) createVideoFromCanvases(frames, 750).then(v => { vid = v; }).catch(() => {});
       modalVideo.onclick = async () => {
         if (!frames) return;
         try {
-          if (!vid) { modalVideo.textContent = 'encoding…'; vid = await createVideoFromCanvases(frames, 750); }
-          modalVideo.textContent = 'save video';
+          if (!vid) { modalVideo.classList.add('loading'); vid = await createVideoFromCanvases(frames, 750); }
+          modalVideo.classList.remove('loading');
           await saveAsset(vid.url, `photogotchi-${Date.now()}.${vid.ext}`, vid.type);
-        } catch { modalVideo.textContent = 'save video'; setStatus('could not make a video'); }
+        } catch { modalVideo.classList.remove('loading'); setStatus('could not make a video'); }
       };
       const close = () => { photoModal.classList.remove('show'); addToGallery(downloadUrl); setDisabled(false); };
       modalDismiss.onclick = close;
