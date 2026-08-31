@@ -85,7 +85,7 @@
     .bw-dot:hover{transform:translateX(-50%) scale(1.25);} .bw-dot.bw{background-image:url('assets/bw.png');}
 
     /* ── Snap GIF button ─── */
-    .controls { flex: 0 0 auto; position: relative; z-index: 10; display: flex; gap: 16px; align-items: center; }
+    .controls { flex: 0 0 auto; position: relative; z-index: 20; display: flex; gap: 16px; align-items: center; }
     .snap-gif { height: var(--btnh); width: auto; cursor: pointer; display: block;
       mix-blend-mode: multiply; transition: transform .1s, opacity .1s; }
     /* gif glyphs fill ~1.5x more of their image, so .667 matches snap's visual size */
@@ -101,10 +101,9 @@
               --savh: 78px; --dismissf: 18px; }
       body { padding: 6px 10px 18px; justify-content: center; }
       .controls { flex-direction: column; gap: 0; }
-      /* pull buttons up into the frame PNG's empty bottom margin */
+      /* pull buttons up into the PNG's empty bottom margin */
       #statusBar { margin-top: -6vh; font-size: 12px; }
       .arrow-btn { font-size: 22px; padding: 6px; }
-      /* raised to 6% so the bigger dot still clears the frame's top loop */
       .bw-dot { top: 6%; width: clamp(52px, 9%, 76px); }
       .gallery-section { display: none !important; }
     }
@@ -398,7 +397,8 @@
         constructor(src) {
           this.size = 48 + Math.floor(Math.random() * 28);
           this.x    = Math.random() * (window.innerWidth  - this.size);
-          this.y    = Math.random() * (window.innerHeight - this.size);
+          const cap = window.innerWidth <= 640 ? window.innerHeight * 0.52 : window.innerHeight;
+          this.y    = Math.random() * Math.max(8, cap - this.size);
           this.vx   = (Math.random() - 0.5) * 2;
           this.vy   = (Math.random() - 0.5) * 2;
           this.rot  = Math.random() * 360;
@@ -408,21 +408,13 @@
           this.prevX = 0;  this.prevY = 0; this.prevT = 0;
 
           this.el = document.createElement('img');
-          this.el.src = src;
-          this.el.draggable = false;
-          Object.assign(this.el.style, {
-            position: 'fixed', left: '0', top: '0',
-            width: this.size + 'px', height: 'auto',
-            zIndex: '5', cursor: 'grab',
-            userSelect: 'none', pointerEvents: 'auto',
-            willChange: 'transform', transition: 'filter .15s',
-          });
+          this.el.src = src; this.el.draggable = false;
+          Object.assign(this.el.style, { position:'fixed', left:'0', top:'0', width:this.size+'px', height:'auto',
+            zIndex:'5', cursor:'grab', userSelect:'none', pointerEvents:'auto', willChange:'transform', transition:'filter .15s' });
           document.body.appendChild(this.el);
 
           this.el.addEventListener('mousedown', e => this._down(e.clientX, e.clientY, e));
-          this.el.addEventListener('touchstart', e => {
-            const t = e.touches[0]; this._down(t.clientX, t.clientY, e);
-          }, { passive: false });
+          this.el.addEventListener('touchstart', e => { const t=e.touches[0]; this._down(t.clientX,t.clientY,e); }, { passive: false });
         }
 
         _down(cx, cy, e) {
@@ -431,8 +423,7 @@
           this.dragOX = cx - this.x; this.dragOY = cy - this.y;
           this.vx = 0; this.vy = 0; this.rotV = 0;
           this.prevX = cx; this.prevY = cy; this.prevT = performance.now();
-          this.el.style.cursor = 'grabbing';
-          this.el.style.zIndex = '15';
+          this.el.style.cursor = 'grabbing'; this.el.style.zIndex = '15';
           this.el.style.filter = 'drop-shadow(0 4px 14px rgba(0,0,0,.35))';
         }
 
@@ -444,9 +435,7 @@
             this.vy = (cy - this.prevY) / dt * 16;
           }
           this.prevX = cx; this.prevY = cy; this.prevT = t;
-          this.x = cx - this.dragOX;
-          this.y = cy - this.dragOY;
-          this._render();
+          this.x = cx - this.dragOX; this.y = cy - this.dragOY; this._render();
         }
 
         release() {
@@ -460,15 +449,12 @@
           this.el.style.filter = '';
         }
 
-        tick() {
+        tick(avoid) {
           if (this.dragging) return;
-          if (Math.random() < 0.012) {
-            this.vx += (Math.random() - 0.5) * 0.7;
-            this.vy += (Math.random() - 0.5) * 0.7;
-          }
+          if (Math.random() < 0.012) { this.vx += (Math.random()-.5)*.7; this.vy += (Math.random()-.5)*.7; }
           const spd = Math.hypot(this.vx, this.vy);
           if (spd > 4)   { this.vx *= 4 / spd; this.vy *= 4 / spd; }
-          if (spd < 0.3) { const a = Math.random() * Math.PI * 2; this.vx += Math.cos(a) * .4; this.vy += Math.sin(a) * .4; }
+          if (spd < 0.3) { const a = Math.random()*Math.PI*2; this.vx += Math.cos(a)*.4; this.vy += Math.sin(a)*.4; }
           this.vx *= 0.995; this.vy *= 0.995;
           this.x += this.vx; this.y += this.vy;
           this.rot += this.rotV; this.rotV *= 0.97;
@@ -477,6 +463,13 @@
           if (this.x > W - this.size) { this.x = W - this.size; this.vx = -Math.abs(this.vx) * 0.75; }
           if (this.y < 0)             { this.y = 0;             this.vy =  Math.abs(this.vy) * 0.75; }
           if (this.y > H - this.size) { this.y = H - this.size; this.vy = -Math.abs(this.vy) * 0.75; }
+          if (avoid) {
+            const p=40, cx=this.x+this.size/2, cy=this.y+this.size/2;
+            if (cx>avoid.left-p && cx<avoid.right+p && cy>avoid.top-p && cy<avoid.bottom+p) {
+              let dx=cx-(avoid.left+avoid.right)/2, dy=cy-(avoid.top+avoid.bottom)/2, d=Math.hypot(dx,dy)||1;
+              this.vx+=dx/d*.5; this.vy+=dy/d*.5; this.x+=dx/d*3; this.y+=dy/d*3;
+            }
+          }
           this._render();
         }
 
@@ -494,7 +487,11 @@
       }, { passive: false });
       window.addEventListener('touchend',  () => sprites.forEach(s => s.release()));
 
-      (function loop() { sprites.forEach(s => s.tick()); requestAnimationFrame(loop); })();
+      const controlsEl = document.querySelector('.controls');
+      (function loop() {
+        const avoid = window.innerWidth <= 640 ? controlsEl.getBoundingClientRect() : null;
+        sprites.forEach(s => s.tick(avoid)); requestAnimationFrame(loop);
+      })();
     })();
   </script>
 </body>
