@@ -167,36 +167,41 @@ function lzwEncode(indices, minCode) {
   return out;
 }
 
-// Real-time canvas capture → mp4/webm. Video can't be transparent, so frames
-// are composited on the page pink. Encoded up-front so share() still counts
-// as a user gesture on iOS.
+// Canvas capture → mp4/webm. Video can't be transparent, so frames sit on page pink.
+// Times out if MediaRecorder hangs (common on iOS) so GIF save is never blocked.
 function createVideoFromCanvases(canvases, delayMs = 750) {
-  const mime = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm']
-    .find(t => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) || '';
-  const src = canvases[0];
-  const W = src.width + src.width % 2, H = src.height + src.height % 2;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  c.style.cssText = 'position:fixed;left:-9999px;pointer-events:none';
-  document.body.appendChild(c);
-  const ctx = c.getContext('2d'), stream = c.captureStream(30);
-  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
-  const chunks = [];
-  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-  const stopped = new Promise((res, rej) => { rec.onstop = res; rec.onerror = () => rej(rec.error); });
-  rec.start(100);
-  const t0 = performance.now(), total = canvases.length * delayMs + 120;
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (err, val) => { if (settled) return; settled = true; clearTimeout(watchdog); try { rec.stop(); } catch {} stream.getTracks().forEach(t => t.stop()); c.remove(); err ? reject(err) : resolve(val); };
+    const mime = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+      .find(t => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) || '';
+    if (typeof MediaRecorder === 'undefined') return reject(new Error('no MediaRecorder'));
+    const src = canvases[0];
+    const W = src.width + src.width % 2, H = src.height + src.height % 2;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    c.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(c);
+    const ctx = c.getContext('2d');
+    let stream, rec;
+    try { stream = c.captureStream(30); rec = new MediaRecorder(stream, mime ? { mimeType: mime } : {}); }
+    catch (e) { c.remove(); return reject(e); }
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      if (!chunks.length) return done(new Error('empty video'));
+      const type = rec.mimeType || mime || 'video/webm';
+      done(null, { url: URL.createObjectURL(new Blob(chunks, { type })), type, ext: type.includes('mp4') ? 'mp4' : 'webm' });
+    };
+    rec.onerror = () => done(rec.error || new Error('recorder'));
+    const watchdog = setTimeout(() => done(new Error('timeout')), canvases.length * delayMs + 2500);
+    try { rec.start(100); } catch (e) { return done(e); }
+    const t0 = performance.now(), total = canvases.length * delayMs + 120;
     (function paint(now) {
+      if (settled) return;
       const i = Math.min(canvases.length - 1, (now - t0) / delayMs | 0);
       ctx.fillStyle = '#fce4f3'; ctx.fillRect(0, 0, W, H); ctx.drawImage(canvases[i], 0, 0);
-      if (now - t0 < total) { requestAnimationFrame(paint); return; }
-      rec.stop();
-      stopped.then(() => {
-        stream.getTracks().forEach(t => t.stop()); c.remove();
-        if (!chunks.length) return reject(new Error('empty video'));
-        const type = rec.mimeType || mime || 'video/webm';
-        resolve({ url: URL.createObjectURL(new Blob(chunks, { type })), type, ext: type.includes('mp4') ? 'mp4' : 'webm' });
-      }).catch(reject);
+      if (now - t0 < total) requestAnimationFrame(paint);
+      else try { rec.stop(); } catch (e) { done(e); }
     })(t0);
   });
 }

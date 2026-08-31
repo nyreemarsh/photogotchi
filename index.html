@@ -77,7 +77,6 @@
     #countdownNum.show { opacity: 1; transform: scale(1); }
 
     /* ── Status ─── */
-    /* negative margin pulls status+buttons up into the PNG's empty bottom margin */
     #statusBar { font-size: 13px; color: #8a5aa0; min-height: 18px; flex: 0 0 auto; position: relative; z-index: 10; margin-top: -7vh; }
 
     /* 51.32% = measured centre of the frame PNG's top loop */
@@ -87,8 +86,7 @@
     /* ── Snap GIF button ─── */
     .controls { flex: 0 0 auto; position: relative; z-index: 20; display: flex; gap: 16px; align-items: center; }
     .snap-gif { height: var(--btnh); width: auto; cursor: pointer; display: block;
-      mix-blend-mode: multiply; transition: transform .1s, opacity .1s; }
-    /* gif glyphs fill more of their image, so .667 matches snap's visual size */
+      mix-blend-mode: multiply; transition: transform .1s, opacity .1s; position: relative; z-index: 21; }
     #gifBtn { height: calc(var(--btnh) * .667); }
     .snap-gif:hover  { transform: scale(1.08); }
     .snap-gif:active { transform: scale(.93); }
@@ -351,20 +349,23 @@
     gifBtn.addEventListener('click', async () => {
       if (!video.srcObject || gifBtn.classList.contains('disabled')) return;
       setDisabled(true); const canvases = [];
-      for (let i = 0; i < 3; i++) {
-        setStatus(`pose ${i + 1} of 3 — get ready...`);
-        await countdown(3); doFlash();
-        canvases.push(cropOpaque(drawFrameToCanvas()));
-        if (i < 2) await new Promise(r => setTimeout(r, 600));
-      }
-      setStatus('✦ encoding...'); gifBtn.classList.add('loading');
-      await new Promise(r => setTimeout(r, 50));
-      const gifUrl = createAnimatedGIF(canvases, 75, 900);
-      let video = null;
-      try { video = await createVideoFromCanvases(canvases, 750); } catch {}
-      gifBtn.classList.remove('loading');
-      showModal({ displayUrl: gifUrl, downloadUrl: gifUrl, saveImg: 'save_gif.png', crop: canvases[0].crop, video });
-      setStatus('');
+      try {
+        for (let i = 0; i < 3; i++) {
+          setStatus(`pose ${i + 1} of 3 — get ready...`);
+          await countdown(3); doFlash();
+          canvases.push(cropOpaque(drawFrameToCanvas()));
+          if (i < 2) await new Promise(r => setTimeout(r, 600));
+        }
+        setStatus('✦ encoding...'); gifBtn.classList.add('loading');
+        await new Promise(r => setTimeout(r, 50));
+        const gifUrl = createAnimatedGIF(canvases, 75, 900);
+        gifBtn.classList.remove('loading');
+        showModal({ displayUrl: gifUrl, downloadUrl: gifUrl, saveImg: 'save_gif.png', crop: canvases[0].crop });
+        setStatus('');
+        createVideoFromCanvases(canvases, 750).then(v => {
+          modalVideo.style.display=''; modalVideo.onclick=()=>saveAsset(v.url,`photogotchi-${Date.now()}.${v.ext}`,v.type);
+        }).catch(()=>{});
+      } catch (err) { gifBtn.classList.remove('loading'); setDisabled(false); setStatus('gif failed — try again'); }
     });
 
     function showModal({displayUrl, downloadUrl, saveImg = 'save_photo.png', crop = null, video = null}) {
