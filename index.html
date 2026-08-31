@@ -80,7 +80,7 @@
     /* negative margin pulls status+buttons up into the PNG's empty bottom margin */
     #statusBar { font-size: 13px; color: #8a5aa0; min-height: 18px; flex: 0 0 auto; position: relative; z-index: 10; margin-top: -7vh; }
 
-    /* 51.32% = measured centre of the frame PNG's top loop, which starts at 20.3% */
+    /* 51.32% = measured centre of the frame PNG's top loop */
     .bw-dot{position:absolute;top:12%;left:51.32%;transform:translateX(-50%);width:clamp(26px,5.5%,56px);aspect-ratio:318/270;background:url('assets/colour.png') center/contain no-repeat;border:none;cursor:pointer;z-index:11;pointer-events:auto;transition:transform .15s;}
     .bw-dot:hover{transform:translateX(-50%) scale(1.25);} .bw-dot.bw{background-image:url('assets/bw.png');}
 
@@ -88,7 +88,7 @@
     .controls { flex: 0 0 auto; position: relative; z-index: 20; display: flex; gap: 16px; align-items: center; }
     .snap-gif { height: var(--btnh); width: auto; cursor: pointer; display: block;
       mix-blend-mode: multiply; transition: transform .1s, opacity .1s; }
-    /* gif glyphs fill ~1.5x more of their image, so .667 matches snap's visual size */
+    /* gif glyphs fill more of their image, so .667 matches snap's visual size */
     #gifBtn { height: calc(var(--btnh) * .667); }
     .snap-gif:hover  { transform: scale(1.08); }
     .snap-gif:active { transform: scale(.93); }
@@ -139,7 +139,8 @@
     .modal-save{background:none;border:none;padding:0;cursor:pointer;transition:transform .15s;}
     .modal-save:hover{transform:scale(1.07);}
     .modal-save img{height:var(--savh);width:auto;mix-blend-mode:multiply;display:block;}
-    .modal-dismiss{background:none;border:none;color:#bbb;font-family:'Nunito',sans-serif;font-size:var(--dismissf);cursor:pointer;text-decoration:underline;}
+    .modal-dismiss,.modal-video{background:none;border:none;font-family:'Nunito',sans-serif;font-size:var(--dismissf);cursor:pointer;text-decoration:underline;}
+    .modal-dismiss{color:#bbb;} .modal-video{color:#8a5aa0;display:none;}
   </style>
 </head>
 <body>
@@ -175,6 +176,7 @@
   <div class="photo-modal" id="photoModal"><div class="modal-card" id="modalCard">
     <img id="modalImg" src="" alt="">
     <button class="modal-save" id="modalSave"><img src="save_photo.png" alt="Save photo"></button>
+    <button class="modal-video" id="modalVideo">save as video</button>
     <button class="modal-dismiss" id="modalDismiss">take another</button>
   </div></div>
 
@@ -197,6 +199,7 @@
     const camError      = document.getElementById('cameraError');
     const photoModal = document.getElementById('photoModal'), modalImg = document.getElementById('modalImg');
     const modalSave  = document.getElementById('modalSave'),  modalDismiss = document.getElementById('modalDismiss');
+    const modalVideo = document.getElementById('modalVideo');
 
     const SKINS = ['assets/blue_tama.png', 'assets/yellow_tama.png', 'assets/strawberry_tama.png', 'assets/checkered_tama.png'];
     let skinIdx = 0;
@@ -354,25 +357,27 @@
         canvases.push(cropOpaque(drawFrameToCanvas()));
         if (i < 2) await new Promise(r => setTimeout(r, 600));
       }
-      setStatus('✦ encoding gif...'); gifBtn.classList.add('loading');
+      setStatus('✦ encoding...'); gifBtn.classList.add('loading');
       await new Promise(r => setTimeout(r, 50));
       const gifUrl = createAnimatedGIF(canvases, 75, 900);
+      let video = null;
+      try { video = await createVideoFromCanvases(canvases, 750); } catch {}
       gifBtn.classList.remove('loading');
-      showModal({ displayUrl: gifUrl, downloadUrl: gifUrl, saveImg: 'save_gif.png', crop: canvases[0].crop });
+      showModal({ displayUrl: gifUrl, downloadUrl: gifUrl, saveImg: 'save_gif.png', crop: canvases[0].crop, video });
       setStatus('');
     });
 
-    function showModal({displayUrl, downloadUrl, saveImg = 'save_photo.png', crop = null}) {
+    function showModal({displayUrl, downloadUrl, saveImg = 'save_photo.png', crop = null, video = null}) {
       const isGif = saveImg.includes('gif'), card = document.getElementById('modalCard');
-      // a cropped source (gif) is mapped back onto the egg's on-screen box so it
-      // lands in exactly the same place an uncropped photo would
       const r = tamaFrame.getBoundingClientRect(), s = crop ? r.width/crop.W : 1;
       const left = crop ? r.left+crop.x0*s : r.left, top = crop ? r.top+crop.y0*(r.height/crop.H) : r.top;
       modalImg.style.cssText = crop ? 'width:100%;height:auto;display:block;margin-bottom:0;' : '';
       card.style.cssText = `position:fixed;left:${left}px;top:${top}px;width:${crop?crop.cw*s:r.width}px;padding:0;background:none;box-shadow:none;gap:8px;max-width:none;`;
       modalImg.src = displayUrl; modalSave.querySelector('img').src = saveImg; photoModal.classList.add('show');
       modalSave.onclick = () => saveAsset(downloadUrl, `photogotchi-${Date.now()}.${isGif?'gif':'png'}`, isGif?'image/gif':'image/png');
-      const close = () => { photoModal.classList.remove('show'); addToGallery(downloadUrl); setStatus('photo saved!'); setTimeout(() => setStatus(''), 2500); setDisabled(false); };
+      modalVideo.style.display = video ? '' : 'none';
+      modalVideo.onclick = () => video && saveAsset(video.url, `photogotchi-${Date.now()}.${video.ext}`, video.type);
+      const close = () => { photoModal.classList.remove('show'); addToGallery(downloadUrl); setDisabled(false); };
       modalDismiss.onclick = close;
       photoModal.onclick = e => { if (e.target === photoModal) close(); };
     }
@@ -399,13 +404,9 @@
           this.x    = Math.random() * (window.innerWidth  - this.size);
           const cap = window.innerWidth <= 640 ? window.innerHeight * 0.52 : window.innerHeight;
           this.y    = Math.random() * Math.max(8, cap - this.size);
-          this.vx   = (Math.random() - 0.5) * 2;
-          this.vy   = (Math.random() - 0.5) * 2;
-          this.rot  = Math.random() * 360;
-          this.rotV = (Math.random() - 0.5) * 1.5;
-          this.dragging = false;
-          this.dragOX = 0; this.dragOY = 0;
-          this.prevX = 0;  this.prevY = 0; this.prevT = 0;
+          this.vx=(Math.random()-.5)*2; this.vy=(Math.random()-.5)*2;
+          this.rot=Math.random()*360; this.rotV=(Math.random()-.5)*1.5;
+          this.dragging=false; this.dragOX=0; this.dragOY=0; this.prevX=0; this.prevY=0; this.prevT=0;
 
           this.el = document.createElement('img');
           this.el.src = src; this.el.draggable = false;
