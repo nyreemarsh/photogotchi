@@ -401,9 +401,13 @@
       class Sprite {
         constructor(src) {
           this.size = 48 + Math.floor(Math.random() * 28);
-          this.x    = Math.random() * (window.innerWidth  - this.size);
-          const cap = window.innerWidth <= 640 ? window.innerHeight * 0.52 : window.innerHeight;
-          this.y    = Math.random() * Math.max(8, cap - this.size);
+          this.x = Math.random() * Math.max(8, innerWidth - this.size);
+          this.y = Math.random() * Math.max(8, innerHeight - this.size);
+          if (innerWidth <= 640) {
+            const r=document.querySelector('.controls').getBoundingClientRect(), p=28;
+            if (this.x+this.size>r.left-p && this.x<r.right+p && this.y+this.size>r.top-p && this.y<r.bottom+p)
+              this.x = this.x+this.size/2<(r.left+r.right)/2 ? Math.max(0,r.left-p-this.size) : Math.min(innerWidth-this.size, r.right+p);
+          }
           this.vx=(Math.random()-.5)*2; this.vy=(Math.random()-.5)*2;
           this.rot=Math.random()*360; this.rotV=(Math.random()-.5)*1.5;
           this.dragging=false; this.dragOX=0; this.dragOY=0; this.prevX=0; this.prevY=0; this.prevT=0;
@@ -415,7 +419,7 @@
           document.body.appendChild(this.el);
 
           this.el.addEventListener('mousedown', e => this._down(e.clientX, e.clientY, e));
-          this.el.addEventListener('touchstart', e => { const t=e.touches[0]; this._down(t.clientX,t.clientY,e); }, { passive: false });
+          this.el.addEventListener('touchstart', e => this._down(e.touches[0].clientX, e.touches[0].clientY, e), { passive: false });
         }
 
         _down(cx, cy, e) {
@@ -459,11 +463,9 @@
           this.vx *= 0.995; this.vy *= 0.995;
           this.x += this.vx; this.y += this.vy;
           this.rot += this.rotV; this.rotV *= 0.97;
-          const W = window.innerWidth, H = window.innerHeight;
-          if (this.x < 0)             { this.x = 0;             this.vx =  Math.abs(this.vx) * 0.75; }
-          if (this.x > W - this.size) { this.x = W - this.size; this.vx = -Math.abs(this.vx) * 0.75; }
-          if (this.y < 0)             { this.y = 0;             this.vy =  Math.abs(this.vy) * 0.75; }
-          if (this.y > H - this.size) { this.y = H - this.size; this.vy = -Math.abs(this.vy) * 0.75; }
+          const W = innerWidth, H = innerHeight, z=this.size;
+          if (this.x<0){this.x=0;this.vx=Math.abs(this.vx)*.75;} if (this.x>W-z){this.x=W-z;this.vx=-Math.abs(this.vx)*.75;}
+          if (this.y<0){this.y=0;this.vy=Math.abs(this.vy)*.75;} if (this.y>H-z){this.y=H-z;this.vy=-Math.abs(this.vy)*.75;}
           if (avoid) {
             const p=40, cx=this.x+this.size/2, cy=this.y+this.size/2;
             if (cx>avoid.left-p && cx<avoid.right+p && cy>avoid.top-p && cy<avoid.bottom+p) {
@@ -483,9 +485,7 @@
 
       window.addEventListener('mousemove', e => sprites.forEach(s => s.move(e.clientX, e.clientY)));
       window.addEventListener('mouseup',   () => sprites.forEach(s => s.release()));
-      window.addEventListener('touchmove', e => {
-        const t = e.touches[0]; sprites.forEach(s => s.move(t.clientX, t.clientY));
-      }, { passive: false });
+      window.addEventListener('touchmove', e => sprites.forEach(s => s.move(e.touches[0].clientX, e.touches[0].clientY)), { passive: false });
       window.addEventListener('touchend',  () => sprites.forEach(s => s.release()));
 
       const controlsEl = document.querySelector('.controls');
