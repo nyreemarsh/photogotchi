@@ -9,18 +9,13 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* The frame PNGs are mostly transparent padding — every skin's opaque "egg" sits
-       at exactly 32.2%-69.3% of the image width — so sizing the image to the viewport
-       left it tiny. --eggk = 50 / (egg's furthest edge from centre) scales it up so
-       the egg, not the padding, is what fills the screen. */
+    /* Frame PNGs are mostly padding; --eggk scales so the opaque egg fills the screen. */
     :root {
       --sl: 39%; --st: 42%; --sw: 28%; --sh: 27.5%; --chrome: 130px; --btnh: 100px;
       --eggk: 2.5907; --eggl: 32.2%; --eggr: 69.3%; --gutter: 140px; --agap: 20px;
       --savh: 56px; --dismissf: 14px;
     }
 
-    /* gradient lives on html with fixed attachment so it always paints the whole
-       viewport — on body it stopped at the box edge and left a seam at the bottom */
     html { background: linear-gradient(135deg, #fce4f3 0%, #dde8ff 50%, #e4f8f0 100%) no-repeat fixed; }
 
     body {
@@ -48,8 +43,7 @@
 
     .device-wrap { position: relative; display: inline-block; overflow: hidden; }
 
-    /* only supplies decoded frames for canvas drawing, never shown (opacity 0) —
-       Safari freezes video shrunk to ~0px or moved off-screen, so it keeps its size */
+    /* video stays sized (Safari freezes a 0px/off-screen feed) but is never shown */
     #cameraFeed {
       position: absolute;
       left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
@@ -64,8 +58,7 @@
       image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;
     }
 
-    /* width-driven + height:auto keeps the PNG's 2388:1668 ratio; setting height
-       AND max-width together squashed the frame on narrow screens */
+    /* width-driven; a locked height + max-width squashed the frame on narrow screens */
     #tamaFrame {
       position: relative; display: block; height: auto;
       width: min(calc((100vw - var(--gutter)) * var(--eggk)), calc((100dvh - var(--chrome)) * 1.4317), 1575px);
@@ -78,15 +71,13 @@
     @keyframes doFlash { 0% { opacity: .9; } 100% { opacity: 0; } }
 
     /* ── Countdown overlay ─── */
-    /* the frame's real window; the video canvas is a wider box that bleeds under the
-       artwork, so centring the digit on that put it off to one side */
+    /* window bounds, not the oversized video canvas — that left the digit off-centre */
     .countdown-wrap{position:absolute;left:41.42%;top:42.33%;width:19.38%;height:25.72%;display:flex;align-items:center;justify-content:center;z-index:3;pointer-events:none;}
     #countdownNum{font-family:'Press Start 2P',monospace;font-size:clamp(24px,5vw,48px);color:#fff;text-shadow:0 0 12px rgba(0,0,0,.6),0 2px 0 rgba(0,0,0,.4);opacity:0;transform:scale(.5);transition:opacity .15s,transform .15s;}
     #countdownNum.show { opacity: 1; transform: scale(1); }
 
     /* ── Status ─── */
-    /* negative margin pulls the status + buttons up into the frame PNG's empty
-       bottom margin, closing the visual gap without shrinking the tamagotchi */
+    /* negative margin pulls status+buttons up into the PNG's empty bottom margin */
     #statusBar { font-size: 13px; color: #8a5aa0; min-height: 18px; flex: 0 0 auto; position: relative; z-index: 10; margin-top: -7vh; }
 
     /* 51.32% = measured centre of the frame PNG's top loop, which starts at 20.3% */
@@ -97,8 +88,7 @@
     .controls { flex: 0 0 auto; position: relative; z-index: 10; display: flex; gap: 16px; align-items: center; }
     .snap-gif { height: var(--btnh); width: auto; cursor: pointer; display: block;
       mix-blend-mode: multiply; transition: transform .1s, opacity .1s; }
-    /* gif.gif's glyphs fill ~1.5x more of its height than snap.gif's, so scaling
-       it to .667 makes the two words render at the same visual size */
+    /* gif glyphs fill ~1.5x more of their image, so .667 matches snap's visual size */
     #gifBtn { height: calc(var(--btnh) * .667); }
     .snap-gif:hover  { transform: scale(1.08); }
     .snap-gif:active { transform: scale(.93); }
@@ -111,7 +101,7 @@
               --savh: 78px; --dismissf: 18px; }
       body { padding: 6px 10px 18px; justify-content: center; }
       .controls { flex-direction: column; gap: 0; }
-      /* -6vh pulls the buttons up into the frame PNG's empty bottom margin */
+      /* pull buttons up into the frame PNG's empty bottom margin */
       #statusBar { margin-top: -6vh; font-size: 12px; }
       .arrow-btn { font-size: 22px; padding: 6px; }
       /* raised to 6% so the bigger dot still clears the frame's top loop */
@@ -330,12 +320,23 @@
 
     function doFlash() { flash.classList.remove('snap'); void flash.offsetWidth; flash.classList.add('snap'); }
 
+    // iOS ignores <a download> (file lands in Files, not Photos) — share sheet offers Save Image
+    async function saveAsset(url, name, type) {
+      try {
+        const file = new File([await (await fetch(url)).blob()], name, { type });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] }); return;
+        }
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+      Object.assign(document.createElement('a'), { href: url, download: name }).click();
+    }
+
     function addToGallery(dataUrl) {
-      gallerySection.style.display = ''; // hidden on mobile via the breakpoint
+      gallerySection.style.display = '';
       const card = document.createElement('div'); card.className = 'photo-card';
       const img = document.createElement('img'); img.src = dataUrl; card.appendChild(img);
       const dlBtn = document.createElement('button'); dlBtn.className = 'dl-btn'; dlBtn.title = 'Download'; dlBtn.textContent = '⬇';
-      dlBtn.addEventListener('click', e => { e.stopPropagation(); Object.assign(document.createElement('a'), { href: dataUrl, download: `photogotchi-${Date.now()}.png` }).click(); });
+      dlBtn.addEventListener('click', e => { e.stopPropagation(); saveAsset(dataUrl, `photogotchi-${Date.now()}.png`, 'image/png'); });
       card.appendChild(dlBtn); gallery.prepend(card);
     }
 
@@ -371,7 +372,7 @@
       modalImg.style.cssText = crop ? 'width:100%;height:auto;display:block;margin-bottom:0;' : '';
       card.style.cssText = `position:fixed;left:${left}px;top:${top}px;width:${crop?crop.cw*s:r.width}px;padding:0;background:none;box-shadow:none;gap:8px;max-width:none;`;
       modalImg.src = displayUrl; modalSave.querySelector('img').src = saveImg; photoModal.classList.add('show');
-      modalSave.onclick = () => Object.assign(document.createElement('a'), { href: downloadUrl, download: `photogotchi-${Date.now()}.${isGif?'gif':'png'}` }).click();
+      modalSave.onclick = () => saveAsset(downloadUrl, `photogotchi-${Date.now()}.${isGif?'gif':'png'}`, isGif?'image/gif':'image/png');
       const close = () => { photoModal.classList.remove('show'); addToGallery(downloadUrl); setStatus('photo saved!'); setTimeout(() => setStatus(''), 2500); setDisabled(false); };
       modalDismiss.onclick = close;
       photoModal.onclick = e => { if (e.target === photoModal) close(); };
