@@ -9,50 +9,67 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* The frame PNGs are mostly transparent padding — every skin's opaque "egg" sits
+       at exactly 32.2%-69.3% of the image width — so sizing the image to the viewport
+       left it tiny. --eggk = 50 / (egg's furthest edge from centre) scales it up so
+       the egg, not the padding, is what fills the screen. */
     :root {
-      --sl: 39%; --st: 42%; --sw: 28%; --sh: 27.5%;
+      --sl: 39%; --st: 42%; --sw: 28%; --sh: 27.5%; --chrome: 130px; --btnh: 100px;
+      --eggk: 2.5907; --eggl: 32.2%; --eggr: 69.3%; --gutter: 140px; --agap: 20px;
+      --savh: 56px; --dismissf: 14px;
     }
 
+    /* gradient lives on html with fixed attachment so it always paints the whole
+       viewport — on body it stopped at the box edge and left a seam at the bottom */
+    html { background: linear-gradient(135deg, #fce4f3 0%, #dde8ff 50%, #e4f8f0 100%) no-repeat fixed; }
+
     body {
-      height: 100vh; overflow: hidden;
-      background: linear-gradient(135deg, #fce4f3 0%, #dde8ff 50%, #e4f8f0 100%);
+      height: 100vh; height: 100dvh; overflow: hidden;
       display: flex; flex-direction: column; align-items: center;
-      padding: 8px 16px 50px; gap: 4px;
-      font-family: 'Nunito', sans-serif;
+      padding: 8px 16px 52px; gap: 2px; font-family: 'Nunito', sans-serif;
     }
 
     /* arrows live inside .tama-outer, absolutely positioned over the PNG transparent margins */
-    .tama-outer {
-      flex: 0 0 auto; position: relative; display: inline-block; z-index: 10;
-    }
+    .tama-outer { flex: 0 0 auto; position: relative; display: inline-block; z-index: 10; pointer-events: none; }
 
     .arrow-btn {
       position: absolute; top: 50%; transform: translateY(-50%);
-      font-size: 30px; background: none; border: none;
-      cursor: pointer; color: rgba(255,255,255,0.55); padding: 10px;
+      font-size: 30px; background: none; border: none; padding: 10px;
+      cursor: pointer; color: rgba(255,255,255,0.55); pointer-events: auto;
       user-select: none; line-height: 1; z-index: 10; transition: color .15s;
     }
     /* include translateY so scale doesn't reset the vertical centering */
     .arrow-btn:hover  { color: rgba(255,255,255,0.9); transform: translateY(-50%) scale(1.25); }
     .arrow-btn:active { transform: translateY(-50%) scale(.9); }
     .arrow-btn:disabled { opacity: .15; cursor: not-allowed; transform: translateY(-50%); }
-    /* tamagotchi body starts at ~32.7% from left / ~31.3% from right of the image */
-    #prevBtn { left: 26%; }
-    #nextBtn { right: 24%; }
+    /* anchored just outside the egg, so they track each skin's opaque bounds */
+    #prevBtn { right: calc(100% - var(--eggl) + var(--agap)); }
+    #nextBtn { left: calc(var(--eggr) + var(--agap)); }
 
     .device-wrap { position: relative; display: inline-block; overflow: hidden; }
 
+    /* only supplies decoded frames for canvas drawing, never shown (opacity 0) —
+       Safari freezes video shrunk to ~0px or moved off-screen, so it keeps its size */
     #cameraFeed {
       position: absolute;
       left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
-      object-fit: cover; border-radius: 4px; transform: scaleX(-1); z-index: 1;
+      opacity: 0; pointer-events: none; z-index: 0;
     }
 
+    /* squished + pixelated live preview, drawn every frame in JS */
+    #cameraCanvas {
+      position: absolute;
+      left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
+      border-radius: 4px; z-index: 1;
+      image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;
+    }
+
+    /* width-driven + height:auto keeps the PNG's 2388:1668 ratio; setting height
+       AND max-width together squashed the frame on narrow screens */
     #tamaFrame {
-      position: relative; display: block;
-      height: min(calc(100vh - 190px), 700px);
-      max-width: calc(100vw - 32px);
-      width: auto; z-index: 2; pointer-events: none; user-select: none;
+      position: relative; display: block; height: auto;
+      width: min(calc((100vw - var(--gutter)) * var(--eggk)), calc((100dvh - var(--chrome)) * 1.4317), 1575px);
+      z-index: 2; pointer-events: none; user-select: none;
     }
 
     /* ── Flash ─── */
@@ -61,77 +78,79 @@
     @keyframes doFlash { 0% { opacity: .9; } 100% { opacity: 0; } }
 
     /* ── Countdown overlay ─── */
-    .countdown-wrap {
-      position: absolute;
-      left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 3; pointer-events: none;
-    }
-    #countdownNum {
-      font-family: 'Press Start 2P', monospace;
-      font-size: clamp(24px, 5vw, 48px); color: #fff;
-      text-shadow: 0 0 12px rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.4);
-      opacity: 0; transform: scale(.5); transition: opacity .15s, transform .15s;
-    }
+    /* the frame's real window; the video canvas is a wider box that bleeds under the
+       artwork, so centring the digit on that put it off to one side */
+    .countdown-wrap{position:absolute;left:41.42%;top:42.33%;width:19.38%;height:25.72%;display:flex;align-items:center;justify-content:center;z-index:3;pointer-events:none;}
+    #countdownNum{font-family:'Press Start 2P',monospace;font-size:clamp(24px,5vw,48px);color:#fff;text-shadow:0 0 12px rgba(0,0,0,.6),0 2px 0 rgba(0,0,0,.4);opacity:0;transform:scale(.5);transition:opacity .15s,transform .15s;}
     #countdownNum.show { opacity: 1; transform: scale(1); }
 
     /* ── Status ─── */
-    #statusBar { font-size: 13px; color: #8a5aa0; min-height: 18px; flex: 0 0 auto; position: relative; z-index: 10; }
+    /* negative margin pulls the status + buttons up into the frame PNG's empty
+       bottom margin, closing the visual gap without shrinking the tamagotchi */
+    #statusBar { font-size: 13px; color: #8a5aa0; min-height: 18px; flex: 0 0 auto; position: relative; z-index: 10; margin-top: -7vh; }
+
+    /* 51.32% = measured centre of the frame PNG's top loop, which starts at 20.3% */
+    .bw-dot{position:absolute;top:12%;left:51.32%;transform:translateX(-50%);width:clamp(26px,5.5%,56px);aspect-ratio:318/270;background:url('assets/colour.png') center/contain no-repeat;border:none;cursor:pointer;z-index:11;pointer-events:auto;transition:transform .15s;}
+    .bw-dot:hover{transform:translateX(-50%) scale(1.25);} .bw-dot.bw{background-image:url('assets/bw.png');}
 
     /* ── Snap GIF button ─── */
-    .controls { flex: 0 0 auto; position: relative; z-index: 10; }
-    .snap-gif {
-      height: 100px; width: auto;
-      cursor: pointer;
-      mix-blend-mode: multiply;
-      transition: transform .1s, opacity .1s;
-      display: block;
-    }
+    .controls { flex: 0 0 auto; position: relative; z-index: 10; display: flex; gap: 16px; align-items: center; }
+    .snap-gif { height: var(--btnh); width: auto; cursor: pointer; display: block;
+      mix-blend-mode: multiply; transition: transform .1s, opacity .1s; }
+    /* gif.gif's glyphs fill ~1.5x more of its height than snap.gif's, so scaling
+       it to .667 makes the two words render at the same visual size */
+    #gifBtn { height: calc(var(--btnh) * .667); }
     .snap-gif:hover  { transform: scale(1.08); }
     .snap-gif:active { transform: scale(.93); }
     .snap-gif.disabled { opacity: .35; pointer-events: none; }
+    .snap-gif.loading { animation: pulse .8s ease-in-out infinite; pointer-events: none; }
+    @keyframes pulse { 0%,100% { opacity: .3; transform: scale(.97); } 50% { opacity: .85; transform: scale(1.03); } }
+
+    @media (max-width: 640px) {
+      :root { --chrome: 196px; --gutter: 76px; --agap: 4px; --btnh: 108px;
+              --savh: 78px; --dismissf: 18px; }
+      body { padding: 6px 10px 18px; justify-content: center; }
+      .controls { flex-direction: column; gap: 0; }
+      /* -6vh pulls the buttons up into the frame PNG's empty bottom margin */
+      #statusBar { margin-top: -6vh; font-size: 12px; }
+      .arrow-btn { font-size: 22px; padding: 6px; }
+      /* raised to 6% so the bigger dot still clears the frame's top loop */
+      .bw-dot { top: 6%; width: clamp(52px, 9%, 76px); }
+      .gallery-section { display: none !important; }
+    }
 
     /* ── Camera error ─── */
-    #cameraError {
-      display: none; position: absolute;
+    #cameraError { display: none; position: absolute; gap: 6px; z-index: 2;
       left: var(--sl); top: var(--st); width: var(--sw); height: var(--sh);
       align-items: center; justify-content: center; flex-direction: column;
-      gap: 6px; z-index: 2; background: rgba(50,20,70,.6); border-radius: 4px;
-    }
+      background: rgba(50,20,70,.6); border-radius: 4px; }
     #cameraError.show { display: flex; }
     .cam-error-icon { font-size: 28px; }
-    .cam-error-text {
-      font-size: 9px; font-family: 'Press Start 2P', monospace;
-      color: #ffd6ff; text-align: center; line-height: 1.6; padding: 0 6px;
-    }
+    .cam-error-text { font-size: 9px; font-family: 'Press Start 2P', monospace;
+      color: #ffd6ff; text-align: center; line-height: 1.6; padding: 0 6px; }
 
     /* ── Gallery ─── */
-    .gallery-section {
-      flex: 1 1 0; min-height: 0;
-      width: 100%; max-width: 900px;
-      overflow-y: auto; display: flex; flex-direction: column; align-items: center;
-    }
-    .gallery-title {
-      font-family: 'Press Start 2P', monospace; font-size: 10px;
-      color: #6b3fa0; margin: 6px 0 8px; flex: 0 0 auto;
-    }
-    .gallery {
-      display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
-      width: 100%;
-    }
-    .photo-card {
-      position: relative; border-radius: 10px; overflow: hidden;
-      box-shadow: 0 3px 12px rgba(100,50,150,.2); transition: transform .2s;
-    }
-    .photo-card:hover { transform: scale(1.04) rotate(-1deg); }
-    .photo-card img { display: block; height: 120px; width: auto; }
-    .photo-card .dl-btn {
-      position: absolute; bottom: 6px; right: 6px;
-      background: rgba(255,255,255,.92); border: 2px solid #d9a0db;
-      border-radius: 7px; padding: 3px 7px; font-size: 13px;
-      cursor: pointer; line-height: 1; transition: background .15s;
-    }
-    .photo-card .dl-btn:hover { background: #fff; }
+    .gallery-section { flex: 1 1 0; min-height: 0; width: 100%; max-width: 900px;
+      overflow-y: auto; display: flex; flex-direction: column; align-items: center; }
+    .gallery-title { font-family: 'Press Start 2P', monospace; font-size: 10px;
+      color: #6b3fa0; margin: 6px 0 8px; flex: 0 0 auto; }
+    .gallery { display:flex;flex-wrap:wrap;gap:10px;justify-content:center;width:100%; }
+    .photo-card { position:relative;border-radius:10px;overflow:hidden;box-shadow:0 3px 12px rgba(100,50,150,.2);transition:transform .2s; }
+    .photo-card:hover { transform:scale(1.04) rotate(-1deg); }
+    .photo-card img { display:block;height:120px;width:auto; }
+    .photo-card .dl-btn { position:absolute;bottom:6px;right:6px;background:rgba(255,255,255,.92);border:2px solid #d9a0db;border-radius:7px;padding:3px 7px;font-size:13px;cursor:pointer;line-height:1;transition:background .15s; }
+    .photo-card .dl-btn:hover { background:#fff; }
+
+    .photo-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s;}
+    .photo-modal.show{opacity:1;pointer-events:auto;}
+    .modal-card{background:linear-gradient(135deg,#fce4f3 0%,#dde8ff 50%,#e4f8f0 100%);border-radius:22px;padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:16px;box-shadow:0 20px 60px rgba(0,0,0,.4);max-width:min(92vw,420px);animation:popIn .35s cubic-bezier(.34,1.56,.64,1);}
+    @keyframes popIn{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+    #modalImg{width:100%;height:auto;border-radius:0;display:block;margin-bottom:-50px;}
+    .modal-title{font-family:'Press Start 2P',monospace;font-size:9px;color:#6b3fa0;}
+    .modal-save{background:none;border:none;padding:0;cursor:pointer;transition:transform .15s;}
+    .modal-save:hover{transform:scale(1.07);}
+    .modal-save img{height:var(--savh);width:auto;mix-blend-mode:multiply;display:block;}
+    .modal-dismiss{background:none;border:none;color:#bbb;font-family:'Nunito',sans-serif;font-size:var(--dismissf);cursor:pointer;text-decoration:underline;}
   </style>
 </head>
 <body>
@@ -139,6 +158,7 @@
   <div class="tama-outer">
     <div class="device-wrap" id="deviceWrap">
       <video id="cameraFeed" autoplay muted playsinline></video>
+      <canvas id="cameraCanvas"></canvas>
       <div class="countdown-wrap"><span id="countdownNum"></span></div>
       <div id="cameraError">
         <span class="cam-error-icon">📵</span>
@@ -148,12 +168,14 @@
     </div>
     <button class="arrow-btn" id="prevBtn">&#9664;</button>
     <button class="arrow-btn" id="nextBtn">&#9654;</button>
+    <button class="bw-dot" id="bwToggle"></button>
   </div>
 
   <div id="statusBar"></div>
 
   <div class="controls">
     <img src="snap.gif" id="snapBtn" class="snap-gif" alt="Snap">
+    <img src="photo_gif.gif" id="gifBtn" class="snap-gif" alt="GIF strip">
   </div>
 
   <div class="gallery-section" id="gallerySection" style="display:none">
@@ -161,12 +183,21 @@
     <div class="gallery" id="gallery"></div>
   </div>
 
+  <div class="photo-modal" id="photoModal"><div class="modal-card" id="modalCard">
+    <img id="modalImg" src="" alt="">
+    <button class="modal-save" id="modalSave"><img src="save_photo.png" alt="Save photo"></button>
+    <button class="modal-dismiss" id="modalDismiss">take another</button>
+  </div></div>
+
   <div class="flash" id="flash"></div>
 
+  <script src="gif-encoder.js"></script>
   <script>
     const video         = document.getElementById('cameraFeed');
+    const cameraCanvas  = document.getElementById('cameraCanvas');
     const tamaFrame     = document.getElementById('tamaFrame');
     const snapBtn       = document.getElementById('snapBtn');
+    const gifBtn        = document.getElementById('gifBtn');
     const prevBtn       = document.getElementById('prevBtn');
     const nextBtn       = document.getElementById('nextBtn');
     const gallery       = document.getElementById('gallery');
@@ -175,36 +206,73 @@
     const countNum      = document.getElementById('countdownNum');
     const statusBar     = document.getElementById('statusBar');
     const camError      = document.getElementById('cameraError');
+    const photoModal = document.getElementById('photoModal'), modalImg = document.getElementById('modalImg');
+    const modalSave  = document.getElementById('modalSave'),  modalDismiss = document.getElementById('modalDismiss');
 
-    const SKINS = ['assets/blue_tama.png', 'assets/yellow_tama.png'];
+    const SKINS = ['assets/blue_tama.png', 'assets/yellow_tama.png', 'assets/strawberry_tama.png', 'assets/checkered_tama.png'];
     let skinIdx = 0;
+
+    // ── Photogotchi "gameboy cam" look — tweak these three numbers ─────────
+    const PIXEL_BLOCK = 6;    // bigger = chunkier / more pixelated
+    const SQUISH_X     = 1.18; // > 1 stretches wider
+    const SQUISH_Y     = 0.82; // < 1 squashes shorter
+    // ─────────────────────────────────────────────────────────────────────
+
+    const pixelBuffer = document.createElement('canvas'); // reused offscreen low-res buffer
+
+    function drawSquishedCover(ctx, source, srcW, srcH, dx, dy, dw, dh, squishX, squishY) {
+      if (!srcW || !srcH) return;
+      const adj = (dw / dh) / (squishX / squishY), srcAR = srcW / srcH;
+      let cW, cH, cX, cY;
+      if (srcAR > adj) { cH=srcH; cW=cH*adj; cX=(srcW-cW)/2; cY=0; }
+      else             { cW=srcW; cH=cW/adj; cX=0; cY=(srcH-cH)/2; }
+      ctx.drawImage(source, cX, cY, cW, cH, dx, dy, dw, dh);
+    }
+
+    function sizeCameraCanvas() {
+      const rect = cameraCanvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      cameraCanvas.width  = Math.max(1, Math.round(rect.width * dpr));
+      cameraCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+    }
+    new ResizeObserver(sizeCameraCanvas).observe(cameraCanvas);
+    sizeCameraCanvas();
+
+    function renderPreview() {
+      if (video.readyState >= 2 && cameraCanvas.width > 0) {
+        const W=cameraCanvas.width, H=cameraCanvas.height;
+        // grid comes from the CSS size, not the backing store: deriving it from
+        // device pixels made the blocks 3x finer on a dpr:3 phone than when saved
+        const cols=Math.max(1,Math.round(cameraCanvas.clientWidth*2/PIXEL_BLOCK)), rows=Math.max(1,Math.round(cameraCanvas.clientHeight*2/PIXEL_BLOCK));
+        pixelBuffer.width=cols; pixelBuffer.height=rows;
+        const bctx=pixelBuffer.getContext('2d'); bctx.save(); bctx.translate(cols,0); bctx.scale(-1,1);
+        drawSquishedCover(bctx,video,video.videoWidth,video.videoHeight,0,0,cols,rows,SQUISH_X,SQUISH_Y);
+        bctx.restore(); const ctx=cameraCanvas.getContext('2d'); ctx.imageSmoothingEnabled=false; ctx.clearRect(0,0,W,H); ctx.drawImage(pixelBuffer,0,0,cols,rows,0,0,W,H);
+      }
+      requestAnimationFrame(renderPreview);
+    }
+    requestAnimationFrame(renderPreview);
 
     function setStatus(msg) { statusBar.textContent = msg; }
 
     function setDisabled(v) {
-      snapBtn.classList.toggle('disabled', v);
+      snapBtn.classList.toggle('disabled', v); gifBtn.classList.toggle('disabled', v);
       prevBtn.disabled = nextBtn.disabled = v;
     }
 
-    function updateSkin() {
-      tamaFrame.src = SKINS[skinIdx];
-    }
+    function updateSkin() { tamaFrame.src = SKINS[skinIdx]; }
 
     prevBtn.addEventListener('click', () => { skinIdx = (skinIdx - 1 + SKINS.length) % SKINS.length; updateSkin(); });
     nextBtn.addEventListener('click', () => { skinIdx = (skinIdx + 1) % SKINS.length; updateSkin(); });
 
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false
-        });
-        video.srcObject = stream;
+        video.srcObject = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
         setStatus('camera ready!');
         setTimeout(() => setStatus(''), 2000);
       } catch {
-        camError.classList.add('show');
-        setStatus('camera permission denied');
+        camError.classList.add('show'); setStatus('camera permission denied');
         snapBtn.classList.add('disabled');
       }
     }
@@ -213,8 +281,7 @@
       return new Promise(resolve => {
         let n = from;
         const tick = () => {
-          countNum.textContent = n;
-          countNum.classList.add('show');
+          countNum.textContent = n; countNum.classList.add('show');
           setTimeout(() => {
             countNum.classList.remove('show');
             setTimeout(() => { if (--n > 0) tick(); else resolve(); }, 200);
@@ -224,56 +291,97 @@
       });
     }
 
+    function drawFrameToCanvas() {
+      const wrap=document.getElementById('deviceWrap'), W=wrap.offsetWidth*2, H=wrap.offsetHeight*2;
+      const canvas=document.createElement('canvas'); canvas.width=W; canvas.height=H;
+      const ctx=canvas.getContext('2d');
+      const vx=.39*W, vy=.42*H, vw=.28*W, vh=.275*H;
+      const cols=Math.max(1,Math.round(vw/PIXEL_BLOCK)), rows=Math.max(1,Math.round(vh/PIXEL_BLOCK));
+      const buf=document.createElement('canvas'); buf.width=cols; buf.height=rows;
+      const bctx=buf.getContext('2d');
+      bctx.save(); bctx.translate(cols,0); bctx.scale(-1,1);
+      drawSquishedCover(bctx,video,video.videoWidth,video.videoHeight,0,0,cols,rows,SQUISH_X,SQUISH_Y);
+      bctx.restore(); ctx.imageSmoothingEnabled=false;
+      // ctx.filter is unsupported in Safari, so desaturate the pixels directly
+      if (bwMode) { const id=bctx.getImageData(0,0,cols,rows), d=id.data; for(let i=0;i<d.length;i+=4){const g=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)|0; d[i]=d[i+1]=d[i+2]=g;} bctx.putImageData(id,0,0); }
+      ctx.drawImage(buf,0,0,cols,rows,vx,vy,vw,vh); ctx.drawImage(tamaFrame,0,0,W,H);
+      return canvas;
+    }
+    // trims the transparent margins off a capture so output is egg-shaped, not landscape
+    function cropOpaque(c) {
+      const W=c.width, H=c.height, {data}=c.getContext('2d').getImageData(0,0,W,H);
+      // count ink per row/col: stray specks in strawberry_tama's margins were letting a plain min/max scan inflate the crop by ~40%
+      const cx=new Uint32Array(W), cy=new Uint32Array(H);
+      for (let i=3;i<data.length;i+=4) if(data[i]>32){ const p=(i-3)/4; cx[p%W]++; cy[p/W|0]++; }
+      const tx=Math.max(2,H*0.003), ty=Math.max(2,W*0.003);
+      let x0=0, y0=0, x1=W-1, y1=H-1;
+      while(x0<x1&&cx[x0]<tx)x0++;  while(x1>x0&&cx[x1]<tx)x1--;
+      while(y0<y1&&cy[y0]<ty)y0++;  while(y1>y0&&cy[y1]<ty)y1--;
+      if (x1<=x0||y1<=y0) return c;
+      const o=document.createElement('canvas'); o.width=x1-x0+1; o.height=y1-y0+1;
+      o.getContext('2d').drawImage(c,x0,y0,o.width,o.height,0,0,o.width,o.height);
+      o.crop={x0,y0,cw:o.width,W,H}; return o;
+    }
+
     async function captureFrame() {
-      const wrap = document.getElementById('deviceWrap');
-      const W = wrap.offsetWidth * 2, H = wrap.offsetHeight * 2;
-      const canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext('2d');
-
-      const grad = ctx.createLinearGradient(0, 0, W, H);
-      grad.addColorStop(0, '#fce4f3'); grad.addColorStop(.5, '#dde8ff'); grad.addColorStop(1, '#e4f8f0');
-      ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
-
-      const vx = .39 * W, vy = .42 * H, vw = .28 * W, vh = .275 * H;
-      ctx.save(); ctx.translate(vx + vw, vy); ctx.scale(-1, 1);
-      ctx.drawImage(video, 0, 0, vw, vh); ctx.restore();
-
-      ctx.drawImage(tamaFrame, 0, 0, W, H);
-      return canvas.toDataURL('image/jpeg', 0.93);
+      const canvas=drawFrameToCanvas();
+      return {displayUrl:canvas.toDataURL('image/png'), downloadUrl:cropOpaque(canvas).toDataURL('image/png')};
     }
 
-    function doFlash() {
-      flash.classList.remove('snap'); void flash.offsetWidth; flash.classList.add('snap');
-    }
+    function doFlash() { flash.classList.remove('snap'); void flash.offsetWidth; flash.classList.add('snap'); }
 
     function addToGallery(dataUrl) {
-      gallerySection.style.display = '';
-      const card = document.createElement('div');
-      card.className = 'photo-card';
-
-      const img = document.createElement('img');
-      img.src = dataUrl; card.appendChild(img);
-
-      const dlBtn = document.createElement('button');
-      dlBtn.className = 'dl-btn'; dlBtn.title = 'Download'; dlBtn.textContent = '⬇';
-      dlBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        Object.assign(document.createElement('a'), {
-          href: dataUrl, download: `photogotchi-${Date.now()}.jpg`
-        }).click();
-      });
-      card.appendChild(dlBtn);
-      gallery.prepend(card);
+      gallerySection.style.display = ''; // hidden on mobile via the breakpoint
+      const card = document.createElement('div'); card.className = 'photo-card';
+      const img = document.createElement('img'); img.src = dataUrl; card.appendChild(img);
+      const dlBtn = document.createElement('button'); dlBtn.className = 'dl-btn'; dlBtn.title = 'Download'; dlBtn.textContent = '⬇';
+      dlBtn.addEventListener('click', e => { e.stopPropagation(); Object.assign(document.createElement('a'), { href: dataUrl, download: `photogotchi-${Date.now()}.png` }).click(); });
+      card.appendChild(dlBtn); gallery.prepend(card);
     }
 
     snapBtn.addEventListener('click', async () => {
       if (!video.srcObject || snapBtn.classList.contains('disabled')) return;
       setDisabled(true); setStatus('get ready...');
-      await countdown(3); doFlash();
-      addToGallery(await captureFrame());
-      setStatus('photo saved!'); setTimeout(() => setStatus(''), 2500);
-      setDisabled(false);
+      await countdown(3); doFlash(); showModal(await captureFrame());
+    });
+
+    gifBtn.addEventListener('click', async () => {
+      if (!video.srcObject || gifBtn.classList.contains('disabled')) return;
+      setDisabled(true); const canvases = [];
+      for (let i = 0; i < 3; i++) {
+        setStatus(`pose ${i + 1} of 3 — get ready...`);
+        await countdown(3); doFlash();
+        canvases.push(cropOpaque(drawFrameToCanvas()));
+        if (i < 2) await new Promise(r => setTimeout(r, 600));
+      }
+      setStatus('✦ encoding gif...'); gifBtn.classList.add('loading');
+      await new Promise(r => setTimeout(r, 50));
+      const gifUrl = createAnimatedGIF(canvases, 75, 900);
+      gifBtn.classList.remove('loading');
+      showModal({ displayUrl: gifUrl, downloadUrl: gifUrl, saveImg: 'save_gif.png', crop: canvases[0].crop });
+      setStatus('');
+    });
+
+    function showModal({displayUrl, downloadUrl, saveImg = 'save_photo.png', crop = null}) {
+      const isGif = saveImg.includes('gif'), card = document.getElementById('modalCard');
+      // a cropped source (gif) is mapped back onto the egg's on-screen box so it
+      // lands in exactly the same place an uncropped photo would
+      const r = tamaFrame.getBoundingClientRect(), s = crop ? r.width/crop.W : 1;
+      const left = crop ? r.left+crop.x0*s : r.left, top = crop ? r.top+crop.y0*(r.height/crop.H) : r.top;
+      modalImg.style.cssText = crop ? 'width:100%;height:auto;display:block;margin-bottom:0;' : '';
+      card.style.cssText = `position:fixed;left:${left}px;top:${top}px;width:${crop?crop.cw*s:r.width}px;padding:0;background:none;box-shadow:none;gap:8px;max-width:none;`;
+      modalImg.src = displayUrl; modalSave.querySelector('img').src = saveImg; photoModal.classList.add('show');
+      modalSave.onclick = () => Object.assign(document.createElement('a'), { href: downloadUrl, download: `photogotchi-${Date.now()}.${isGif?'gif':'png'}` }).click();
+      const close = () => { photoModal.classList.remove('show'); addToGallery(downloadUrl); setStatus('photo saved!'); setTimeout(() => setStatus(''), 2500); setDisabled(false); };
+      modalDismiss.onclick = close;
+      photoModal.onclick = e => { if (e.target === photoModal) close(); };
+    }
+
+    let bwMode = false;
+    document.getElementById('bwToggle').addEventListener('click', function () {
+      bwMode = !bwMode;
+      this.classList.toggle('bw', bwMode);
+      cameraCanvas.style.filter = bwMode ? 'grayscale(1)' : '';
     });
 
     updateSkin();
